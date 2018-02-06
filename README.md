@@ -13,6 +13,7 @@ Plans for exploration:
 
 - [x] Tensorflow tutorial simple softmax
 - [X] Tensforflow tutorial deep Convolutional NN
+- [ ] CNN for CIFAR-10 or CIFAR-100 class recognition
 - [ ] Recurrent NN tutorial
 - [ ] RNN for text generation (shakespeare example)
 - [ ] RNN for stock price prediction
