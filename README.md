@@ -23,3 +23,4 @@ Plans for exploration:
 
 - RNN tutorial from deep learning without PHD
     - [Link to slides](https://docs.google.com/presentation/d/e/2PACX-1vRouwj_3cYsmLrNNI3Uq5gv5-hYp_QFdeoan2GlxKgIZRSejozruAbVV0IMXBoPsINB7Jw92vJo2EAM/pub#slide=id.p)
+    - [Link to code on github](https://github.com/martin-gorner/tensorflow-rnn-shakespeare)
