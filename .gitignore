@@ -1,2 +1,5 @@
 # ignore notebook checkpoints
 *.ipynb_checkpoints
+
+# ignore data
+*/MNIST_data/*
