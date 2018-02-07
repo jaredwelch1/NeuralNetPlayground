@@ -3,3 +3,4 @@
 
 # ignore data
 */MNIST_data/*
+*/shakespeare/*
