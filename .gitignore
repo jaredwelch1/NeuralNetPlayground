@@ -4,3 +4,7 @@
 # ignore data
 */MNIST_data/*
 */shakespeare/*
+
+# ignore log files and checkpoints from training
+*/log/*
+*/checkpoints/*
