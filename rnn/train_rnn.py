@@ -8,13 +8,13 @@ import os
 import time
 from datetime import datetime
 
-# some values to be used in model creation 
+# some values to be used in model creation
 
 SEQLEN = 30 # length of seq of characters fed into rnn
-BATCHSIZE = 400 # seq / batch 
+BATCHSIZE = 400 # seq / batch
 ALPHASIZE = 98 # number of possible values for a character (important for softmax layer and input sizing)
-INTERNALSIZE = 512 # size of GRU cell internally 
-NLAYERS = 3 # how many are we stacking 
+INTERNALSIZE = 512 # size of GRU cell internally
+NLAYERS = 3 # how many are we stacking
 learning_rate = 0.001
 dropout_pkeep = 0.8 # probability of dropout
 
@@ -58,8 +58,8 @@ def convert_to_alphabet(c, avoid_tab_and_lf=False):
     if 32 <= c + 30 <= 126:
         return c + 30
     else:
-        return 0  
-    
+        return 0
+
 # helper function for encoding data
 def encode_text(s):
     """Encode a string.
@@ -87,7 +87,7 @@ def read_data_files(directory, validation=True):
                 bookranges.append({"start": start, "end": end, "name": f.rsplit("/", 1)[-1]})
         if len(bookranges) == 0:
             sys.exit('No training data has been found. Aborting')
-        
+
         # For validation, use roughly 90K of text,
         # but no more than 10% of the entire text
         # and no more than 1 book in 5 => no validation at all for 5 files or fewer.
@@ -126,7 +126,7 @@ def read_data_files(directory, validation=True):
         return training_text, valitext, bookranges
 
 
-# location of training/test text 
+# location of training/test text
 data_dir_glob = "shakespeare/*.txt"
 
 # train_text and vali_text are lists of characters, encoded to numeric values to be fed to the rnn in batches
@@ -140,8 +140,8 @@ epoch_size = len(train_text) // (BATCHSIZE * SEQLEN)
 
 # example:
 #     Batch 1 [ The cow jumped ove] Batch 2 [r the moon]
-# 
-# If we do not maintain the ordering of sequences in this manner, training is not as effective 
+#
+# If we do not maintain the ordering of sequences in this manner, training is not as effective
 def rnn_minibatching(raw_data, batch_size, sequence_size, nb_epochs):
     data = np.array(raw_data)
     data_len = data.shape[0]
@@ -151,7 +151,7 @@ def rnn_minibatching(raw_data, batch_size, sequence_size, nb_epochs):
     rounded_data_len = int(nb_batches * batch_size * sequence_size)
     xdata = np.reshape(data[0:rounded_data_len], [batch_size, nb_batches * sequence_size])
     ydata = np.reshape(data[1:rounded_data_len+1], [batch_size, nb_batches * sequence_size])
-    
+
     for epoch in range(nb_epochs):
         for batch in range(nb_batches):
             x = xdata[:, batch * sequence_size:(batch + 1) * sequence_size]
@@ -193,7 +193,7 @@ Yr, H = tf.nn.dynamic_rnn(multicell, Xo, dtype=tf.float32, initial_state=Hin)
 
 H = tf.identity(H, name='H') # give it a name
 
-# Softmax output layer 
+# Softmax output layer
 # Flatten the first two dimensions of the output [ BATCHSIZE, SEQLEN, ALPHASIZE] => [BATCHSIZE * SEQLEN, ALPHASIZE]
 # then apply softmax readout
 
@@ -239,7 +239,7 @@ DISPLAY_FREQ = 50 # show every 100 batches
 _100_batches = DISPLAY_FREQ * SEQLEN * BATCHSIZE
 
 
-# Training 
+# Training
 
 NUM_EPOCHS = 10
 prev_epoch = -1
@@ -252,35 +252,37 @@ for x, y_, epoch in rnn_minibatching(train_text, BATCHSIZE, SEQLEN, nb_epochs=NU
             epoch_time = curr_time - epoch_start_time
             print("Time for training (hours:minutes:seconds)" + str(epoch_time))
             epoch_start_time = curr_time
-            
+
         print("Training starting on epoch " + str(epoch))
         prev_epoch = epoch
-    # train on a minibatch 
+    # train on a minibatch
     feed_dict = {X: x, Y_: y_, Hin: istate, lr: learning_rate, pkeep: dropout_pkeep, batchsize: BATCHSIZE}
     _, y, ostate, = sess.run([train_step, Y, H], feed_dict=feed_dict)
-    
+
     # log training data for tensorboard
     if step % _100_batches == 0:
         feed_dict = {X: x, Y_: y_, Hin: istate, pkeep: 1.0, batchsize: BATCHSIZE}  # no dropout for validation
         y, l, bl, acc, smm = sess.run([Y, seqloss, batchloss, accuracy, summaries], feed_dict=feed_dict)
         summary_writer.add_summary(smm, step)
-    
-    # log a validation step 
+
+    # log a validation step
     if step % _100_batches == 0 and len(vali_text) > 0:
-        VALI_SEQLEN = 1*1024 # Sequence length for validation 
+        VALI_SEQLEN = 1*1024 # Sequence length for validation
         bsize = len(vali_text) // VALI_SEQLEN
         vali_x, vali_y, _ = next(rnn_minibatching(vali_text, bsize, VALI_SEQLEN, 1)) # all data in a single batch
         vali_nullstate = np.zeros([bsize, INTERNALSIZE*NLAYERS])
         feed_dict = {X: vali_x, Y_: vali_y, Hin: vali_nullstate, pkeep: 1.0, batchsize: bsize}
         ls, acc, smm = sess.run([batchloss, accuracy, summaries], feed_dict=feed_dict)
         validation_writer.add_summary(smm, step)
-    
-    # save a checkpoint 
+
+    # save a checkpoint
     if step // 10 % _100_batches == 0:
         saved_file = saver.save(sess, 'checkpoints/rnn_train_' + timestamp, global_step=step)
         print("Saved checkpoint file: " + saved_file)
-    
+
     istate = ostate
     step += BATCHSIZE * SEQLEN
-    
 
+# save the final trained model
+saved_file = saver.save(sess, 'checkpoints/rnn_final_' + timestamp, global_step=step)
+print("Model training finished. Saved to " + saved_file)
