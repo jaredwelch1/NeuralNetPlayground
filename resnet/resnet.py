@@ -294,3 +294,179 @@ class Model(object):
         inputs = tf.layers.dense(inputs=inputs, units=self.num_classes)
         inputs = tf.identity(inputs, 'final_dense')
         return inputs
+
+
+###############################################################################
+# Functions for trainng/evaluation/validation loops
+###############################################################################
+def learning_rate_with_decay(
+        batch_size, batch_denom, num_images, boundary_epochs, decay_rates):
+    """Get a learning rate that decays as training progresses
+
+    Args:
+        batch_size: number of images in each training batch
+        batch_denom: this value will be used to scale learning rate
+            '0.1 * batch_size' is divided by this number, such that
+            the initial learning rate is 0.1
+        num_images: total count of images in training data
+        boundary_epochs: list of ints representing the epochs where learning
+            rate decays
+        decay_rates: list of floats representing the decay rates to be used
+            for scaling learning rate. same length as boundary_epochs
+
+    Returns:
+        returns function that takes single argument, the number of batches
+        trained so far (global_step) and returns learning rate to be used
+        for the next batch
+    """
+    initial_learning_rate = 0.1 * batch_size / batch_denom
+    batches_per_epoch = num_images / batch_size
+
+    # multiply learning rate by 0.1 at each boundary epoch
+    boundaries = [int(batches_per_epoch * epoch) for epoch in boundary_epochs]
+    vals = [initial_learning_rate * decay for decay in decay_rates]
+
+    def learning_rate_fn(global_step):
+        global_step = tf.cast(global_step, tf.int32)
+        return tf.train.piecewise_constant(global_step, boundaries, vals)
+
+    return learning_rate_fn
+
+def resnet_model_fn(features, labels, mode, model_class,
+                    resnet_size, weight_decay, learning_rate_fn, momentum,
+                    data_format, loss_filter_fn=None):
+    """Shared functionality for different resnet model functions
+
+    Inits the ResnetModel representing the model layers and uses it
+    to build the EstimatorSpecs for the 'mode'. For training, this
+    includes losses, optimizer, and training operations that get passed in
+
+    Args:
+        features: tensor representing input images
+        labels: tensor representing the class labels
+        mode: current estimator mode, should be one of
+            'tf.estimator.ModeKeys.TRAIN', 'EVALUATE', 'PREDICT'
+        model_class: class representing a tensorflow model that
+            has a __call__ method, assumed to be a subclass of ResNet Model
+        resnet_size: int for size of model (count of NN layers)
+        weight_decay: weight decay loss rate used to regularize learned variables
+        learning_rate_fn: function that returns current learning rate
+            based on global_step
+        momentum: momentum term used for optimization
+        data_format: input format for the data
+            ('channels_first' or 'channels_last')
+        loss_filter_fn: function that takes a string variable name
+            and returns whether it shoud be used for loss calculation
+
+    Returns:
+        EstimatorSpec parameterized according to the input params and mode
+    """
+
+    # Generate a summary node for images
+    tf.summary.image('images', features, max_outputs=6)
+
+    model = model_class(resnet_size, data_format)
+    logits = model(features, mode == tf.estimator.ModeKeys.TRAIN)
+
+    predictions = {
+        'classes': tf.argmax(logits, axis=1),
+        'probabilities': tf.nn.softmax(logits, name='softmax_tensor')
+    }
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+
+    # Calculate our loss
+    cross_entropy = tf.losses.softmax_cross_entropy(
+        logits=logits, onehot_labels=labels)
+
+    # create tensor for logging cross_entropy
+    tf.identity(cross_entropy, name='cross_entropy')
+    tf.summary.scalar('cross_entropy', cross_entropy)
+
+    # define a default behavior if a loss_filter_fn is not provided
+    # which discludes batch_norm variables
+    if not loss_filter_fn:
+        def loss_filter_fn(name): # pylint: disable=E0102
+            return 'batch_normalization' not in name
+
+    loss = cross_entropy + weight_decay * tf.add_n(
+        [tf.nn.l2_loss(v) for v in tf.trainable_variables()
+         if loss_filter_fn(v.name)])
+
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        global_step = tf.train.get_or_create_global_step()
+
+        learning_rate = learning_rate_fn(global_step)
+
+        # create tensor for learning rate for logging
+        tf.identity(learning_rate, name='learning_rate')
+        tf.summary.scalar('learning_rate', learning_rate)
+
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate,
+            momentum=momentum)
+
+        # batch norm requires update operations to be added as a dependency
+        # to train_op
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            train_op = optimizer.minimize(loss, global_step)
+    else:
+        train_op = None
+
+    accuracy = tf.metrics.accuracy(
+        tf.argmax(labels, axis=1), predictions['classes'])
+    metrics = {'accuracy': accuracy}
+
+    # create tensor for logging training accuracy
+    tf.identity(accuracy[1], name='train_accuracy')
+    tf.summary.scalar('train_accuracy', accuracy[1])
+
+    return tf.estimator.EstimatorSpec(
+        mode=mode,
+        predictions=predictions,
+        loss=loss,
+        train_op=train_op,
+        eval_metric_ops=metrics)
+
+def resnet_main(flags, model_function, input_function):
+    """A main for executing resnet model functionality"""
+    # using winograd non-fused algorithms gives a small boost in performance
+    os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
+
+    # set up a runconfig to save chekcpoints once per train cycle
+    run_config = tf.estimator.RunConfig().replace(save_checkpoints_secs=1e9)
+    classifier = tf.estimator.Estimator(
+        model_fn=model_function, model_dir=flags.model_dir, config=run_config,
+        params={
+            'resnet_size': flags.resnet_size,
+            'data_format': flags.data_format,
+            'batch_size': flags.batch_size
+        })
+
+    for _ in range(flags.train_epochs // flags.epochs_per_eval):
+        tensors_to_log = {
+            'learning_rate': 'learning_rate',
+            'cross_entropy': 'cross_entropy',
+            'train_accuracy': 'train_accuracy'
+        }
+
+        logging_hook = tf.train.LoggingTensorHook(
+            tensors=tensors_to_log, every_n_iter=100)
+
+        print('Starting a training cycle')
+
+        def input_fn_train():
+            return input_function(True, flags.data_dir, flags.batch_size,
+                                  flags.epochs_per_eval, flags.num_parallel_calls)
+
+        classifier.train(input_fn=input_fn_train, hooks=[logging_hook])
+
+        print('Starting to evaluate')
+        # evaluate the model and print results
+        def input_fn_eval():
+            return input_function(False, flags.data_dir, flags.batch_size,
+                                  1, flags.num_parallel_calls)
+        eval_results = classifier.evaluate(input_fn=input_fn_eval)
+        print(eval_results)
