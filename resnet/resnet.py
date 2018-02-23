@@ -2,7 +2,9 @@
 before every weight layer. This is the resnet v2 architecture that can be found
 here: https://arxiv.org/abs/1603.05027"""
 
+import argparse
 import os
+
 import tensorflow as tf
 
 
@@ -470,3 +472,46 @@ def resnet_main(flags, model_function, input_function):
                                   1, flags.num_parallel_calls)
         eval_results = classifier.evaluate(input_fn=input_fn_eval)
         print(eval_results)
+
+class ResnetArgParser(argparse.ArgumentParser):
+    """Args for configuring and running ResNet model"""
+    def __init__(self, resnet_size_choices=None):
+        super(ResnetArgParser, self).__init__()
+        self.add_argument(
+            '--data_dir', type=str, default='/tmp/resnet_data',
+            help='The directory where the input data is stored.')
+
+        self.add_argument(
+            '--num_parallel_calls', type=int, default=5,
+            help='The number of records that are processed in parallel'
+            'during input processing.')
+
+        self.add_argument(
+            '--model_dir', type=str, default='/tmp/resnet_model',
+            help='Directory for storing the model.')
+
+        self.add_argument(
+            '--resnet_size', type=int, default=50,
+            help='Size of resnet model to use.')
+
+        self.add_argument(
+            '--train_epochs', type=int, default=100,
+            help='Number of training epochs to run between evaluations.')
+
+        self.add_argument(
+            '--epochs_per_eval', type=int, default=1,
+            help='Number of training epochs to run between evaluations.')
+
+        self.add_argument(
+            '--batch_size', type=int, default=32,
+            help='Batch size for training and evaluation.'
+        )
+
+        self.add_argument(
+            '--data_format', type=str, default=None,
+            choices=['channels_first', 'channels_last'],
+            help='A flag to override the data format used in the model. '
+            'channels_first provides a performance boost on GPU but '
+            'is not always compatible with CPU. If left unspecified, '
+            'the data format will be chosen automatically based on '
+            'whether TensorFlow was built for CPU or GPU.')
