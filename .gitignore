@@ -1,6 +1,9 @@
 # ignore notebook checkpoints
 *.ipynb_checkpoints
 
+# ignore pycache stuff
+*/__pycache__/*
+
 # ignore data
 */MNIST_data/*
 */shakespeare/*
@@ -8,3 +11,6 @@
 # ignore log files and checkpoints from training
 */log/*
 */checkpoints/*
+
+# ignore model files from cifar10 resnet
+*/cifar10_model/*

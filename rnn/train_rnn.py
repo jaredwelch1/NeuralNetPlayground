@@ -246,11 +246,11 @@ prev_epoch = -1
 epoch_start_time = datetime.now()
 for x, y_, epoch in rnn_minibatching(train_text, BATCHSIZE, SEQLEN, nb_epochs=NUM_EPOCHS):
     if epoch != prev_epoch:
-        if prev_epoch != -1:
+        if prev_epoch > -1:
             print("Training finished on epoch" + str(prev_epoch))
             curr_time = datetime.now()
             epoch_time = curr_time - epoch_start_time
-            print("Time for training (hours:minutes:seconds)" + str(epoch_time))
+            print("Time for training (hours:minutes:seconds) " + str(epoch_time))
             epoch_start_time = curr_time
 
         print("Training starting on epoch " + str(epoch))

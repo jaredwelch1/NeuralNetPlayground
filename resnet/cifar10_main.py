@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
     # set defaults
     parser.set_defaults(data_dir='/tmp/cifar10_data',
-                        model_dir='/tmp/cifar1_model',
+                        model_dir='/tmp/cifar10_model',
                         resnet_size=32,
                         train_epochs=250,
                         epochs_per_eval=10,
